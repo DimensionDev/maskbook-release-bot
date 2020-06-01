@@ -1,27 +1,14 @@
-# maintainer-bot
+## Workflows
 
-> A GitHub App built with [Probot](https://github.com/probot/probot) that A Probot app
+### New release
 
-## Setup
+1. Admin of the repo open a new issue, title contains `release` or `release major`
+2. The bot will create a new PR for it.
+3. After the PR merges, the bot will tag the commit and force push to the `released` branch.
 
-```sh
-# Install dependencies
-npm install
+## HotFix
 
-# Run with hot reload
-npm run build:watch
-
-# Compile and run
-npm run build
-npm run start
-```
-
-## Contributing
-
-If you have suggestions for how maintainer-bot could be improved, or want to report a bug, open an issue! We'd love all and any contributions.
-
-For more, check out the [Contributing Guide](CONTRIBUTING.md).
-
-## License
-
-[ISC](LICENSE) © 2020 Jack Works <jackworks@protonmail.com>
+1. Admin of the repo open a new issue, title contains `hotfix`
+2. The bot will create 2 new PRs for it.
+3. Add your fixes.
+4. Mark the first PR as ready, the
