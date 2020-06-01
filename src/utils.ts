@@ -11,7 +11,7 @@ export async function fetchFile(context: Context<any>, path: string) {
 }
 
 export function semver(ver: string) {
-    const [major, minor, patch, ...rest] = ver.split('.').map(x => parseInt(x, 10))
+    const [major, minor, patch, ...rest] = ver.split('.').map((x) => parseInt(x, 10))
     let isValid = true
     if (rest.length) isValid = false
     if (Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)) isValid = false

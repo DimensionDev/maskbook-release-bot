@@ -1,0 +1,9 @@
+service: maskbook-maintain-bot
+provider:
+    name: aws
+    runtime: nodejs12.x
+functions:
+    probot:
+        handler: handler.probot
+        events:
+            - http: post github_hook

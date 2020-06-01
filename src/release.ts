@@ -37,7 +37,7 @@ export async function release(context: Context<Webhooks.WebhookPayloadIssues>, v
     const upgrade = versionUpgrade(packageJSON.version, nextVersion)
     const changes: Changes = new Map()
     changes.set('package.json', upgrade(packageJSONString))
-    changes.set('src/manifest.json', x => x.then(upgrade))
+    changes.set('src/manifest.json', (x) => x.then(upgrade))
     await createCommitWithFileChanges(
         context,
         branch.data,
@@ -49,7 +49,7 @@ export async function release(context: Context<Webhooks.WebhookPayloadIssues>, v
     const templatePath2 = '.github/HOTFIX-TEMPLATE.md'
     const templatePath = version === 'patch' ? templatePath2 : templatePath1
     const template = await fetchFile(context, templatePath).then(
-        x => x.replace(/\$version/g, nextVersion),
+        (x) => x.replace(/\$version/g, nextVersion),
         () =>
             `This is the release PR for ${nextVersion}. To set a default template for the release PR, create a file "${templatePath}". You can use $version to infer the new version.`,
     )

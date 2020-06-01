@@ -10,8 +10,8 @@ export async function hotfix(context: Context<Webhooks.WebhookPayloadPullRequest
     if (base.ref === 'released' && head.ref.startsWith('hotfix/')) {
         const ccList = new Set()
         ccList.add(context.payload.sender.login)
-        pr.assignees.forEach(x => ccList.add(x.login))
-        const cc = `\n\n(CC: ${[...ccList].map(x => '@' + x).join(' ')})`
+        pr.assignees.forEach((x) => ccList.add(x.login))
+        const cc = `\n\n(CC: ${[...ccList].map((x) => '@' + x).join(' ')})`
 
         const version = semver(head.ref.replace('hotfix/', ''))
         if (!version.isValid) return
@@ -26,9 +26,9 @@ export async function hotfix(context: Context<Webhooks.WebhookPayloadPullRequest
                 head: `hotfix/${version}`,
                 base: 'master',
             })
-            .then(x => x.data.filter(x => x.title.includes(`2 of 2`))[0])
-            .then(x => context.github.pulls.get({ ...context.repo(), number: x.number }))
-            .then(x => x.data)
+            .then((x) => x.data.filter((x) => x.title.includes(`2 of 2`))[0])
+            .then((x) => context.github.pulls.get({ ...context.repo(), number: x.number }))
+            .then((x) => x.data)
 
         const relatedPR = await related
         if (!relatedPR) {

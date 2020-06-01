@@ -1,15 +1,15 @@
 import { Application } from 'probot'
 import { release } from './release'
-import { createLiveComment, semver, gitTagCommit, forcePush, merge, deleteBranch } from './utils'
+import { createLiveComment, semver, gitTagCommit, forcePush, deleteBranch } from './utils'
 import { hotfix } from './hotfix'
 
 export = (app: Application) => {
-    app.on('*', async context => {
+    app.on('*', async (context) => {
         Object.assign(globalThis, { context })
     })
     // ? When a new issue opened with "release" "release major" or "hotfix"
     // ? Schedule a new release
-    app.on('issues.opened', async context => {
+    app.on('issues.opened', async (context) => {
         if (isValidAction(context.payload.issue.author_association)) {
             const title = context.payload.issue.title.toLowerCase()
             if (title.includes('release major')) await release(context, 'major')
@@ -17,7 +17,7 @@ export = (app: Application) => {
             else if (title.includes('hotfix')) await release(context, 'patch')
         }
     })
-    app.on('pull_request.closed', async context => {
+    app.on('pull_request.closed', async (context) => {
         const pr = context.payload.pull_request
         if (!pr.merged) return
         // ? When a PR is merged, case 1: release/version merged into master
@@ -35,7 +35,7 @@ export = (app: Application) => {
 ✔ The branch release/${version.string} is deleted.`)
         }
     })
-    app.on('pull_request', async context => {
+    app.on('pull_request', async (context) => {
         await hotfix(context)
     })
 }
