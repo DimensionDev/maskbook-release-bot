@@ -104,14 +104,16 @@ When the ${pr1.data.html_url} merged, I'll try to merge this automatically but t
 
 Once there're merge conflict, you must resolve it manually.`,
         })
-        context.github.pulls.update({
-            ...repo,
-            number: pr1.data.number,
-            body: pr1body.replace('$link', pr2.data.html_url),
-        })
-        updateComment(
-            `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr1.data.html_url}) and there is [another PR to make sure patches are merged into the mainline](${pr2.data.html_url}).`,
-        )
+        await Promise.all([
+            context.github.pulls.update({
+                ...repo,
+                number: pr1.data.number,
+                body: pr1body.replace('$link', pr2.data.html_url),
+            }),
+            updateComment(
+                `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr1.data.html_url}) and there is [another PR to make sure patches are merged into the mainline](${pr2.data.html_url}).`,
+            ),
+        ])
     }
 }
 

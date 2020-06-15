@@ -29,8 +29,8 @@ export = (app: Application) => {
             const updateComment = createLiveComment(context, `⚡ Force pushing ${head.sha} to \`released\`...`)
             await gitTagCommit(context, head.sha, `v${version.string}`)
             await forcePush(context, head.sha, 'released')
-            deleteBranch(context, head.ref)
-            updateComment(`✔ The \`released\` has updated to ${head.sha}.\n
+            await deleteBranch(context, head.ref)
+            await updateComment(`✔ The \`released\` has updated to ${head.sha}.\n
 ✔ The commit ${head.sha} is tagged as v${version.string}.\n
 ✔ The branch release/${version.string} is deleted.`)
         }

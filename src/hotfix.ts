@@ -19,7 +19,7 @@ export async function hotfix(context: Context<Webhooks.WebhookPayloadPullRequest
         await gitTagCommit(context, head.sha, `v${version.string}`)
         await forcePush(context, head.sha, 'released')
 
-        const related = context.github.pulls
+        const relatedPR = await context.github.pulls
             .list({
                 ...context.repo(),
                 state: 'open',
@@ -30,7 +30,6 @@ export async function hotfix(context: Context<Webhooks.WebhookPayloadPullRequest
             .then((x) => context.github.pulls.get({ ...context.repo(), number: x.number }))
             .then((x) => x.data)
 
-        const relatedPR = await related
         if (!relatedPR) {
             const title2 = pr.title.replace('1 of 2', '2 of 2')
             return updateComment(`✔ This PR is automatically merged.\n
@@ -40,7 +39,7 @@ export async function hotfix(context: Context<Webhooks.WebhookPayloadPullRequest
         const autoMerge = await merge(context, relatedPR, `chore: merge ${version.string} into master`, head.sha)
         relatedPR.number
         if (autoMerge) {
-            deleteBranch(context, head.ref)
+            await deleteBranch(context, head.ref)
             return updateComment(`✔ This PR is automatically merged.\n
 ✔ [The related PR](${relatedPR.html_url}) is automatically merged too.
 
