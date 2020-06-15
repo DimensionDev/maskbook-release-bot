@@ -32,7 +32,8 @@ export async function release(context: Context<Webhooks.WebhookPayloadIssues>, v
     const updateComment = createLiveComment(context, `⚙Handling... Please wait a second`)
     // Step 2. Create a new branch
     const newBranch = (version === 'patch' ? 'hotfix/' : 'release/') + nextVersion
-    const branch = await checkoutNewBranch(context, 'master', newBranch)
+    const baseBranch = version === 'patch' ? 'released' : 'master'
+    const branch = await checkoutNewBranch(context, baseBranch, newBranch)
     // Step 3. Create a new Git tree, do some file changes in it, commit it to the new branch.
     const upgrade = versionUpgrade(packageJSON.version, nextVersion)
     const changes: Changes = new Map()
@@ -54,7 +55,10 @@ export async function release(context: Context<Webhooks.WebhookPayloadIssues>, v
             `This is the release PR for ${nextVersion}. To set a default template for the release PR, create a file "${templatePath}". You can use $version to infer the new version.`,
     )
     const PRTitle = `${getReleaseTitle(version, packageJSON.version, nextVersion)} (${version})`
-    const sharedTemplate = `close #${context.payload.issue.number}`
+    const sharedTemplate = `close #${context.payload.issue.number}
+
+**DO NOT** push any commits to the \`released\` branch, any change on that branch will lost.
+`
     if (version === 'major' || version === 'minor') {
         const pr = await context.github.pulls.create({
             ...repo,
@@ -64,8 +68,6 @@ export async function release(context: Context<Webhooks.WebhookPayloadIssues>, v
             body: `${sharedTemplate}
 Once the release is ready, merge this branch and I'll do the rest of jobs.
 
-**DO NOT** push any commits to the \`released\` branch, any change on that branch will lost.
-
 ${template}`,
             maintainer_can_modify: true,
         })
@@ -74,7 +76,7 @@ ${template}`,
         )
     } else if (version === 'patch') {
         const pr1body = `${sharedTemplate}
-Once the hotfix is ready, convert this PR from _draft_ to _ready_.
+Once the hotfix is ready, convert this PR from **draft** to **ready**.
 
 Then, I'll tag the latest commit with "v${nextVersion}" and merge this automatically.
 

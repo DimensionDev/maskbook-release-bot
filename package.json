@@ -20,7 +20,8 @@
     "start": "probot run ./lib/index.js",
     "lint": "standard **/*.ts --fix",
     "test": "jest && standard **/*.ts",
-    "test:watch": "jest --watch --notify --notifyMode=change --coverage"
+    "test:watch": "jest --watch --notify --notifyMode=change --coverage",
+    "pub": "serverless"
   },
   "dependencies": {
     "@probot/serverless-lambda": "^0.5.0",
