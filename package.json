@@ -3,44 +3,47 @@
   "version": "1.0.0",
   "private": true,
   "description": "A Probot app",
-  "author": "Jack Works <jackworks@protonmail.com>",
-  "license": "ISC",
-  "repository": "https://github.com/DimensionDev/maintainer-bot.git",
-  "homepage": "https://github.com/DimensionDev/maintainer-bot",
-  "bugs": "https://github.com/DimensionDev/maintainer-bot/issues",
   "keywords": [
     "probot",
     "github",
     "probot-app"
   ],
+  "homepage": "https://github.com/DimensionDev/maintainer-bot",
+  "bugs": "https://github.com/DimensionDev/maintainer-bot/issues",
+  "repository": "https://github.com/DimensionDev/maintainer-bot.git",
+  "license": "ISC",
+  "author": "Jack Works <jackworks@protonmail.com>",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc && (tsc -w --preserveWatchOutput & nodemon)",
     "dev": "npm run build:watch",
-    "start": "probot run ./lib/index.js",
     "lint": "standard **/*.ts --fix",
+    "pub": "serverless deploy",
+    "start": "probot run ./lib/index.js",
     "test": "jest && standard **/*.ts",
-    "test:watch": "jest --watch --notify --notifyMode=change --coverage",
-    "pub": "serverless deploy"
+    "test:watch": "jest --watch --notify --notifyMode=change --coverage"
+  },
+  "jest": {
+    "testEnvironment": "node"
   },
   "dependencies": {
     "@probot/serverless-lambda": "^0.5.0",
-    "probot": "^9.5.3"
+    "probot": "^9.15.1"
   },
   "devDependencies": {
-    "serverless": "^1.71.3",
-    "@types/jest": "^25.1.0",
+    "@types/jest": "^26.0.13",
     "@types/nock": "^11.1.0",
-    "@types/node": "^13.1.0",
-    "@typescript-eslint/parser": "^2.4.0",
+    "@types/node": "^14.6.4",
+    "@typescript-eslint/parser": "^4.1.0",
     "eslint-plugin-typescript": "^0.14.0",
-    "jest": "^24.9.0",
+    "jest": "^25.5.4",
     "nock": "^12.0.0",
     "nodemon": "^2.0.0",
-    "smee-client": "^1.1.0",
+    "serverless": "^1.82.0",
+    "smee-client": "^1.2.2",
     "standard": "^14.3.1",
-    "ts-jest": "^25.1.0",
-    "typescript": "^3.6.4"
+    "ts-jest": "^26.3.0",
+    "typescript": "^4.0.2"
   },
   "engines": {
     "node": ">= 8.3.0"
@@ -53,8 +56,5 @@
     "plugins": [
       "typescript"
     ]
-  },
-  "jest": {
-    "testEnvironment": "node"
   }
 }
