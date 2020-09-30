@@ -1,13 +1,13 @@
-import { Octokit, Context } from 'probot'
-import * as Webhooks from '@octokit/webhooks'
-
-function expectFile<T = string>(res: Octokit.Response<Octokit.ReposGetContentsResponse>) {
-    if (Array.isArray(res)) throw new Error('Expect a file, but found a directory')
-    return (res.data as any) as T
-}
+import { Context } from 'probot'
+import Webhooks from '@octokit/webhooks'
+import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods/dist-types/generated/parameters-and-response-types'
 export async function fetchFile(context: Context<any>, path: string) {
     const res = await context.github.repos.getContents(context.repo({ path, mediaType: { format: 'raw' } }))
-    return expectFile(res)
+    return expectFile()
+    function expectFile<T = string>() {
+        if (Array.isArray(res)) throw new Error('Expect a file, but found a directory')
+        return (res.data as any) as T
+    }
 }
 
 export function semver(ver: string) {
@@ -38,10 +38,6 @@ export async function checkoutNewBranch(context: Context<any>, targetBranch: str
 function queryBranchRef(context: Context<any>, branch: string) {
     return context.github.git.getRef({ ...context.repo(), ref: 'heads/' + branch })
 }
-function getLatestCommitOnBranch(x: Octokit.GitGetRefResponse) {
-    return x.object.sha
-}
-
 export async function gitTagCommit(context: Context<any>, commit: string, tag: string) {
     const repo = context.repo()
     const _tag = await context.github.git.createTag({
@@ -62,15 +58,15 @@ export async function gitTagCommit(context: Context<any>, commit: string, tag: s
 export type Changes = Map<string, string | ((file: Promise<string>) => Promise<string>)>
 export async function createCommitWithFileChanges(
     context: Context<any>,
-    editingBranch: Octokit.GitCreateRefResponse,
+    editingBranch: RestEndpointMethodTypes['git']['createRef']['response']['data'],
     editMap: Changes,
     commitMessage: string,
 ) {
     const repo = context.repo()
-    const lastCommit = getLatestCommitOnBranch(editingBranch)
+    const lastCommit = editingBranch.object.sha
     const lastTree = await context.github.git.getCommit({ ...repo, commit_sha: lastCommit })
 
-    const edits: Octokit.GitCreateTreeParams['tree'] = []
+    const edits: RestEndpointMethodTypes['git']['createTree']['parameters']['tree'] = []
     for (const [path, edit] of editMap) {
         const newContent = typeof edit === 'string' ? edit : await edit(fetchFile(context, path))
         edits.push({ content: newContent, mode: '100644', path, type: 'blob' })
@@ -87,7 +83,11 @@ export async function createCommitWithFileChanges(
         parents: [lastCommit],
         tree: newTree.data.sha,
     })
-    await context.github.git.updateRef({ ...repo, ref: editingBranch.ref.replace('refs/', ''), sha: commit.data.sha })
+    await context.github.git.updateRef({
+        ...repo,
+        ref: editingBranch.ref.replace('refs/', ''),
+        sha: commit.data.sha,
+    })
 }
 export function createLiveComment(context: Context<any>, initMessage: string) {
     const issue = context.issue()
@@ -106,7 +106,7 @@ export function forcePush(context: Context<any>, pushingCommit: string, pushedBr
     })
 }
 export async function merge(
-    context: Context<Webhooks.WebhookPayloadPullRequest>,
+    context: Context<Webhooks.EventPayloads.WebhookPayloadPullRequest>,
     pr: { mergeable: null | boolean; number: number },
     message: string,
     sha: string,

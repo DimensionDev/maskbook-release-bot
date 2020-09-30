@@ -14,7 +14,7 @@ type Semver = 'major' | 'minor' | 'patch'
  *      Create a new branch, create PR to master, create PR to released.
  *      Once (PR to released) draft => ready, tag the latest commit and merge it automatically.
  */
-export async function release(context: Context<Webhooks.WebhookPayloadIssues>, version: Semver) {
+export async function release(context: Context<Webhooks.EventPayloads.WebhookPayloadIssues>, version: Semver) {
     // Step 1. Get the latest version on the GitHub.
     const packageJSONString = await fetchFile(context, 'package.json')
     const packageJSON: { version: string } = JSON.parse(packageJSONString)
@@ -107,7 +107,7 @@ Once there're merge conflict, you must resolve it manually.`,
         await Promise.all([
             context.github.pulls.update({
                 ...repo,
-                number: pr1.data.number,
+                pull_number: pr1.data.number,
                 body: pr1body.replace('$link', pr2.data.html_url),
             }),
             updateComment(

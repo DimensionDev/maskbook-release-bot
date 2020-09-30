@@ -2,7 +2,7 @@ import { Context } from 'probot'
 import { semver, createLiveComment, gitTagCommit, merge, deleteBranch, forcePush } from './utils'
 import * as Webhooks from '@octokit/webhooks'
 
-export async function hotfix(context: Context<Webhooks.WebhookPayloadPullRequest>) {
+export async function hotfix(context: Context<Webhooks.EventPayloads.WebhookPayloadPullRequest>) {
     const pr = context.payload.pull_request
     if (context.payload.action !== 'ready_for_review') return
     // ? When a PR is ready for review, case 2: hotfix/version merged into released
