@@ -45,6 +45,5 @@ export = (app: Application) => {
 }
 
 function isValidAction(author: string) {
-    if (author === 'COLLABORATOR' || author === 'OWNER' || author === 'MEMBER') return true
-    return false
+    return ['COLLABORATOR', 'OWNER', 'MEMBER'].includes(author)
 }
