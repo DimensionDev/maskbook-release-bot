@@ -10,11 +10,15 @@ export = (app: Application) => {
     // ? When a new issue opened with "release" "release major" or "hotfix"
     // ? Schedule a new release
     app.on('issues.opened', async (context) => {
-        if (isValidAction(context.payload.issue.author_association)) {
-            const title = context.payload.issue.title.toLowerCase()
-            if (title.includes('release major')) await release(context, 'major')
-            else if (title.includes('release')) await release(context, 'minor')
-            else if (title.includes('hotfix')) await release(context, 'patch')
+        if (!isValidAction(context.payload.issue.author_association)) {
+            return
+        }
+        if (!/^\[Release\]\s+(major|minor|patch)$/.test(context.payload.issue.title)) {
+            return
+        }
+        const version = RegExp.$1
+        if (version === 'major' || version === 'minor' || version === 'patch') {
+            await release(context, version)
         }
     })
     app.on('pull_request.closed', async (context) => {
