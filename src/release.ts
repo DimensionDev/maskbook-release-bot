@@ -121,9 +121,9 @@ function getReleaseTitle(version: Semver, currentVersion: string, nextVersion: s
     switch (version) {
         case 'major':
         case 'minor':
-            return `New release ${nextVersion}`
+            return `[Release] New release ${nextVersion}`
         case 'patch':
-            return `Hotfix ${currentVersion} => ${nextVersion}`
+            return `[Release] Hotfix ${currentVersion} => ${nextVersion}`
     }
 }
 function versionUpgrade(old: string, newV: string) {
