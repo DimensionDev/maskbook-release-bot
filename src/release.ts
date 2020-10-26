@@ -38,7 +38,7 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
     const upgrade = versionUpgrade(packageJSON.version, nextVersion)
     const changes: Changes = new Map()
     changes.set('package.json', upgrade(packageJSONString))
-    changes.set('src/manifest.json', (x) => x.then(upgrade))
+    changes.set('packages/maskbook/src/manifest.json', (x) => x.then(upgrade))
     await createCommitWithFileChanges(
         context,
         branch.data,
