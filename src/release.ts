@@ -16,11 +16,11 @@ type Semver = 'major' | 'minor' | 'patch'
  */
 export async function release(context: Context<Webhooks.EventPayloads.WebhookPayloadIssues>, version: Semver) {
     // Step 1. Get the latest version on the GitHub.
-    const packageJSONString = await fetchFile(context, 'package.json')
-    const packageJSON: { version: string } = JSON.parse(packageJSONString)
-    const { nextMinor, nextMajor, nextPatch } = semver(packageJSON.version)
+    const manifestJSONString = await fetchFile(context, 'packages/maskbook/src/manifest.json')
+    const manifest: { version: string } = JSON.parse(manifestJSONString)
+    const { nextMinor, nextMajor, nextPatch } = semver(manifest.version)
     const nextVersion = version === 'major' ? nextMajor : version === 'minor' ? nextMinor : nextPatch
-    const releaseTitle = getReleaseTitle(version, packageJSON.version, nextVersion)
+    const releaseTitle = getReleaseTitle(version, manifest.version, nextVersion)
 
     const issue = context.issue()
     const repo = context.repo()
@@ -35,15 +35,14 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
     const baseBranch = version === 'patch' ? 'released' : 'master'
     const branch = await checkoutNewBranch(context, baseBranch, newBranch)
     // Step 3. Create a new Git tree, do some file changes in it, commit it to the new branch.
-    const upgrade = versionUpgrade(packageJSON.version, nextVersion)
+    const upgrade = versionUpgrade(manifest.version, nextVersion)
     const changes: Changes = new Map()
-    changes.set('package.json', upgrade(packageJSONString))
     changes.set('packages/maskbook/src/manifest.json', (x) => x.then(upgrade))
     await createCommitWithFileChanges(
         context,
         branch.data,
         changes,
-        `chore: bump version from ${packageJSON.version} to ${nextVersion}`,
+        `chore: bump version from ${manifest.version} to ${nextVersion}`,
     )
     // Step 4. Open a PR for it
     const templatePath1 = '.github/RELEASE-TEMPLATE.md'
@@ -54,7 +53,7 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
         () =>
             `This is the release PR for ${nextVersion}. To set a default template for the release PR, create a file "${templatePath}". You can use $version to infer the new version.`,
     )
-    const PRTitle = `${getReleaseTitle(version, packageJSON.version, nextVersion)} (${version})`
+    const PRTitle = `${getReleaseTitle(version, manifest.version, nextVersion)} (${version})`
     const sharedTemplate = `close #${context.payload.issue.number}
 
 **DO NOT** push any commits to the \`released\` branch, any change on that branch will lost.
