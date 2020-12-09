@@ -1,6 +1,6 @@
 import { Application } from 'probot'
 import { release } from './release'
-import { createLiveComment, semver, gitTagCommit, forcePush, deleteBranch } from './utils'
+import { createLiveComment, semver, gitTagCommit, forcePush, deleteBranch, createComment } from './utils'
 import { hotfix } from './hotfix'
 
 export = (app: Application) => {
@@ -10,13 +10,18 @@ export = (app: Application) => {
     // ? When a new issue opened with "release" "release major" or "hotfix"
     // ? Schedule a new release
     app.on('issues.opened', async (context) => {
-        if (!isValidAction(context.payload.issue.author_association)) {
-            return
-        }
         if (!/^\[Release\]\s+(major|minor|patch)$/.test(context.payload.issue.title)) {
             return
         }
-        const version = RegExp.$1
+        if (!isValidAction(context.payload.issue.author_association)) {
+            await context.octokit.issues.update({ ...context.issue(), state: 'closed' })
+            await createComment(
+                context,
+                `Hi, thanks for your interest on this project. This command is used to releasing a new version, and it is only available for the maintainers of this project.`,
+            )
+            return
+        }
+        const version = RegExp.$1 // see line 13
         if (version === 'major' || version === 'minor' || version === 'patch') {
             await release(context, version)
         }
@@ -39,11 +44,9 @@ export = (app: Application) => {
 ✔ The branch release/${version.string} is deleted.`)
         }
     })
-    app.on('pull_request', async (context) => {
-        await hotfix(context)
-    })
+    app.on('pull_request', hotfix)
 }
 
 function isValidAction(author: string) {
-    return ['COLLABORATOR', 'OWNER', 'MEMBER'].includes(author)
+    return ['OWNER', 'MEMBER'].includes(author)
 }

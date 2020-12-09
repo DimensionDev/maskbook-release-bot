@@ -89,9 +89,12 @@ export async function createCommitWithFileChanges(
         sha: commit.data.sha,
     })
 }
+export function createComment(context: Context<any>, message: string) {
+    return context.octokit.issues.createComment({ ...context.issue(), body: message })
+}
 export function createLiveComment(context: Context<any>, initMessage: string) {
     const issue = context.issue()
-    const pending = context.octokit.issues.createComment({ ...issue, body: initMessage })
+    const pending = createComment(context, initMessage)
     return async (message: string) => {
         return context.octokit.issues.updateComment({ ...issue, body: message, comment_id: (await pending).data.id })
     }
