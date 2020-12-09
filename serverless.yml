@@ -7,3 +7,5 @@ functions:
         handler: handler.probot
         events:
             - http: post github_hook
+plugins:
+    - serverless-dotenv-plugin

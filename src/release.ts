@@ -7,9 +7,85 @@ import {
     Changes,
     createLiveComment,
     branchExists,
+    deleteBranch,
+    createComment,
 } from './utils'
 import Webhooks from '@octokit/webhooks'
 type Semver = 'major' | 'minor' | 'patch'
+
+enum Status {
+    BeforeGetLatestVersion,
+    BeforeCheckIfNewBranchAlreadyExists,
+    BeforeCheckoutNewBranch,
+    BeforeBumpVersion,
+    CreatePR,
+}
+type ReportFunction = {
+    (progress: Exclude<Status, Status.CreatePR>): Promise<void>
+    (progress: Status.CreatePR, count: number, all: number): Promise<void>
+}
+
+export async function release(context: Context<Webhooks.EventPayloads.WebhookPayloadIssues>, expectedSemver: Semver) {
+    const updateComment = createLiveComment(context, `⚙ Working...`)
+    let lastMessage = '⚙ Working...'
+    let lastStatus: Status = -1
+    let lastCount = 0
+    let lastAll = 1
+    let lastComposedMessage = createMessage(lastStatus, lastCount, lastAll, lastMessage)
+    let lastPromise: Promise<any> = Promise.resolve()
+    const interval = setInterval(() => {
+        const currentMessage = createMessage(lastStatus, lastCount, lastAll, lastMessage)
+        if (lastComposedMessage !== currentMessage) {
+            lastComposedMessage = currentMessage
+            lastPromise = updateComment(currentMessage)
+        }
+    }, 1000)
+    try {
+        await release_with_report(
+            context,
+            expectedSemver,
+            (async (progress: Status, count: number, all: number) => {
+                lastStatus = progress
+                lastCount = count
+                lastAll = all
+                return lastPromise
+            }) as ReportFunction,
+            async (message) => {
+                lastMessage = message
+                return lastPromise
+            },
+        )
+    } catch (e) {
+        lastMessage = `❌ ${e?.constructor?.name || 'Error'}: ${e?.message}
+${'```'}
+${e?.stack}
+${'```'}
+
+@Jack-Works please fix me!
+`
+    } finally {
+        clearInterval(interval)
+        await updateComment(createMessage(lastStatus, lastCount, lastAll, lastMessage))
+    }
+}
+
+function createMessage(progress: Status, count: number, all: number, message: string) {
+    let text = ''
+    ord(Status.BeforeGetLatestVersion, 'Get latest version')
+    ord(Status.BeforeCheckIfNewBranchAlreadyExists, 'Check if the target branch exists')
+    ord(Status.BeforeCheckoutNewBranch, 'Check out to the target branch')
+    ord(Status.BeforeBumpVersion, 'Bump version')
+    if (Status.CreatePR === progress) {
+        if (count === all) text += `- ✅ PR created\n`
+        else text += `- ⏳ Creating PR... ${all > 1 ? `(${count} of ${all})` : ''}\n`
+    } else text += `- Create PR\n`
+    function ord(x: Status, y: string) {
+        if (progress < x) text += `- ${y}...\n`
+        else if (progress === x) text += `- ⏳ ${y}\n`
+        else text += `- ✅ ${y}\n`
+    }
+    return text + '\n\n' + message
+}
 
 /**
  * Workflow:
@@ -22,79 +98,130 @@ type Semver = 'major' | 'minor' | 'patch'
  *      Create a new branch, create PR to master, create PR to released.
  *      Once (PR to released) draft => ready, tag the latest commit and merge it automatically.
  */
-export async function release(context: Context<Webhooks.EventPayloads.WebhookPayloadIssues>, version: Semver) {
-    // Step 1. Get the latest version on the GitHub.
-    const manifestJSONString = await fetchFile(context, 'packages/maskbook/src/manifest.json')
-    const manifest: { version: string } = JSON.parse(manifestJSONString)
-    const { nextMinor, nextMajor, nextPatch } = semver(manifest.version)
-    const nextVersion = version === 'major' ? nextMajor : version === 'minor' ? nextMinor : nextPatch
-    const releaseTitle = getReleaseTitle(version, manifest.version, nextVersion)
-
+export async function release_with_report(
+    context: Context<Webhooks.EventPayloads.WebhookPayloadIssues>,
+    expectedSemver: Semver,
+    reportProgress: ReportFunction,
+    reportMessage: (message: string) => Promise<void>,
+) {
     const issue = context.issue()
     const repo = context.repo()
+
+    //#region Step 0. Get the latest version on the GitHub.
+    reportProgress(Status.BeforeGetLatestVersion)
+    const { releaseTitle, nextVersion, currentVersion } = await (async () => {
+        const manifestJSONString = await fetchFile(context, 'packages/maskbook/src/manifest.json')
+        const { version: currentVersion }: { version: string } = JSON.parse(manifestJSONString)
+        const { nextMinor, nextMajor, nextPatch } = semver(currentVersion)
+        const nextVersion = expectedSemver === 'major' ? nextMajor : expectedSemver === 'minor' ? nextMinor : nextPatch
+        const releaseTitle = getReleaseTitle(expectedSemver, currentVersion, nextVersion)
+        return { releaseTitle, nextVersion, currentVersion }
+    })()
     // Add a 🚀 for the issue
     context.octokit.reactions.createForIssue({ ...issue, content: 'rocket' })
     // Rename the issue title
     context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [], labels: ['Release'] })
-    // Leave a comment
-    const updateComment = createLiveComment(context, `⚙ I'm preparing a new version...`)
-    let lastSuccessStage = 'before checkout new branch'
-    try {
-        // Step 2. Create a new branch
-        const newBranch = (version === 'patch' ? 'hotfix/' : 'release/') + nextVersion
-        const baseBranch = version === 'patch' ? 'released' : 'master'
-        if (await branchExists(context, newBranch)) {
-            updateComment(
-                `⚠ The branch used to release ${newBranch} already exists. I cannot create a new PR for you, sorry.`,
-            )
-            context.octokit.issues.update({ ...issue, state: 'closed' })
-        }
-        const branch = await checkoutNewBranch(context, baseBranch, newBranch)
-        lastSuccessStage = 'after checkout new branch'
-        // Step 3. Create a new Git tree, do some file changes in it, commit it to the new branch.
-        const upgrade = versionUpgrade(manifest.version, nextVersion)
+    //#endregion
+
+    //#region Step 1. Fetch PR template
+    const templatePath = expectedSemver === 'patch' ? '.github/HOTFIX-TEMPLATE.md' : '.github/RELEASE-TEMPLATE.md'
+    const sharedTemplate = getSharedPRTemplate(context.payload.issue.number)
+    const template = fetchFile(context, templatePath).then(
+        (x) => x.replace(/\$version/g, nextVersion),
+        () => getDefaultPRTemplate(nextVersion, templatePath),
+    )
+    //#endregion
+
+    //#region Step 2. Check if the branch exists
+    reportProgress(Status.BeforeCheckIfNewBranchAlreadyExists)
+    const baseBranch = expectedSemver === 'patch' ? 'released' : 'master'
+    const newBranch = (expectedSemver === 'patch' ? 'hotfix/' : 'release/') + nextVersion
+    const ifExisting = await branchExists(context, newBranch)
+    if (ifExisting) {
+        createComment(
+            context,
+            `The branch ${newBranch} already exists, I removed it to continue. FYI that branch was on commit ${ifExisting.data.object.sha}`,
+        )
+        await deleteBranch(context, newBranch)
+    }
+    //#endregion
+
+    //#region Step.3 Checkout new branch
+    {
+        reportProgress(Status.BeforeCheckoutNewBranch)
+        const newBranchInfo = await checkoutNewBranch(context, baseBranch, newBranch)
+        //#endregion
+
+        //#region Step 4. Create a new Git tree, do some file changes in it, commit it to the new branch.
+        reportProgress(Status.BeforeBumpVersion)
+        const upgrade = versionUpgrade(currentVersion, nextVersion)
         const changes: Changes = new Map()
         changes.set('packages/maskbook/src/manifest.json', (x) => x.then(upgrade))
         await createCommitWithFileChanges(
             context,
-            branch.data,
+            newBranchInfo.data,
             changes,
-            `chore: bump version from ${manifest.version} to ${nextVersion}`,
+            `chore: bump version from ${currentVersion} to ${nextVersion}`,
         )
-        lastSuccessStage = 'after commit version upgrading'
-        // Step 4. Open a PR for it
-        const templatePath1 = '.github/RELEASE-TEMPLATE.md'
-        const templatePath2 = '.github/HOTFIX-TEMPLATE.md'
-        const templatePath = version === 'patch' ? templatePath2 : templatePath1
-        const template = await fetchFile(context, templatePath).then(
-            (x) => x.replace(/\$version/g, nextVersion),
-            () =>
-                `This is the release PR for ${nextVersion}. To set a default template for the release PR, create a file "${templatePath}". You can use $version to infer the new version.`,
+    }
+    //#endregion
+
+    const PRTitle = getReleaseTitle(expectedSemver, currentVersion, nextVersion)
+    if (expectedSemver === 'major' || expectedSemver === 'minor') {
+        //#region Step 6.a Create Release PR
+        reportProgress(Status.CreatePR, 0, 1)
+        const pr = await context.octokit.pulls.create({
+            ...repo,
+            base: 'master',
+            head: newBranch,
+            title: PRTitle,
+            body: getReleasePRTemplate(sharedTemplate, await template),
+            maintainer_can_modify: true,
+        })
+        reportProgress(Status.CreatePR, 1, 1)
+        await reportMessage(
+            `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr.data.html_url}). Please test it, feel free to add new patches.`,
         )
-        lastSuccessStage = 'after fetch template'
-        const PRTitle = `${getReleaseTitle(version, manifest.version, nextVersion)} (${version})`
-        const sharedTemplate = `close #${context.payload.issue.number}
+        //#endregion
+    } else if (expectedSemver === 'patch') {
+        //#region Step 6.b Create hotfix PR
+        const pr1body = getHotfixPR1Template(sharedTemplate, nextVersion, await template)
+        reportProgress(Status.CreatePR, 0, 2)
+        const pr1 = await context.octokit.pulls.create({
+            ...repo,
+            base: 'released',
+            head: newBranch,
+            title: PRTitle + ' (1 of 2)',
+            body: pr1body,
+            maintainer_can_modify: true,
+            draft: true,
+        })
+        reportProgress(Status.CreatePR, 1, 2)
+        const pr2 = await context.octokit.pulls.create({
+            ...repo,
+            base: 'master',
+            head: newBranch,
+            title: PRTitle + ' (2 of 2)',
+            body: getHotfixPR2Template(pr1.data.html_url),
+        })
+        reportProgress(Status.CreatePR, 2, 2)
 
-**DO NOT** push any commits to the \`released\` branch, any change on that branch will lost.
-`
-        if (version === 'major' || version === 'minor') {
-            const pr = await context.octokit.pulls.create({
-                ...repo,
-                base: 'master',
-                head: newBranch,
-                title: PRTitle,
-                body: `${sharedTemplate}
-Once the release is ready, merge this branch and I'll do the rest of jobs.
+        const updatePR1 = context.octokit.pulls.update({
+            ...repo,
+            pull_number: pr1.data.number,
+            body: pr1body.replace('$link', pr2.data.html_url),
+        })
+        const conclusion = reportMessage(
+            `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr1.data.html_url}) and there is [another PR to make sure patches are merged into the mainline](${pr2.data.html_url}).`,
+        )
+        await updatePR1
+        await conclusion
+        //#endregion
+    }
+}
 
-${template}`,
-                maintainer_can_modify: true,
-            })
-            lastSuccessStage = 'after PR created'
-            await updateComment(
-                `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr.data.html_url}). Please test it, feel free to add new patches.`,
-            )
-        } else if (version === 'patch') {
-            const pr1body = `${sharedTemplate}
+function getHotfixPR1Template(sharedTemplate: string, nextVersion: string, template: string) {
+    return `${sharedTemplate}
 Once the hotfix is ready, convert this PR from **draft** to **ready**.
 
 Then, I'll tag the latest commit with "v${nextVersion}" and merge this automatically.
@@ -102,58 +229,41 @@ Then, I'll tag the latest commit with "v${nextVersion}" and merge this automatic
 There is [another PR]($link) point to the master branch to make sure patches are in  the mainline.
 
 ${template}`
-            // Create 2 PR. hotfix/version => released, hotfix/version => master
-            const pr1 = await context.octokit.pulls.create({
-                ...repo,
-                base: 'released',
-                head: newBranch,
-                title: PRTitle + ' (1 of 2)',
-                body: pr1body,
-                maintainer_can_modify: true,
-                draft: true,
-            })
-            lastSuccessStage = 'after PR 1 created'
-            const pr2 = await context.octokit.pulls.create({
-                ...repo,
-                base: 'master',
-                head: newBranch,
-                title: PRTitle + ' (2 of 2)',
-                body: `This is a mirror PR of ${pr1.data.html_url} to make sure that all patches to the released branch also merged into the mainline.
+}
 
-When the ${pr1.data.html_url} merged, I'll try to merge this automatically but there might be merge conflict.
+function getHotfixPR2Template(url: string): string {
+    return `This is a mirror PR of ${url} to make sure that all patches to the released branch also merged into the mainline.
 
-Once there're merge conflict, you must resolve it manually.`,
-            })
-            lastSuccessStage = 'after PR 2 created'
-            await Promise.all([
-                context.octokit.pulls.update({
-                    ...repo,
-                    pull_number: pr1.data.number,
-                    body: pr1body.replace('$link', pr2.data.html_url),
-                }),
-                updateComment(
-                    `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr1.data.html_url}) and there is [another PR to make sure patches are merged into the mainline](${pr2.data.html_url}).`,
-                ),
-            ])
-        }
-    } catch (e) {
-        updateComment(`❌ ${e?.type}: ${e?.message}
-${'```'}
-${e?.stack}
-${'```'}
+When the ${url} merged, I'll try to merge this automatically but there might be merge conflict.
 
-@Jack-Works please fix me! The last successful stage was: ${lastSuccessStage}
-`)
-    }
+Once there're merge conflict, you must resolve it manually.`
+}
+
+function getReleasePRTemplate(sharedTemplate: string, template: string): string {
+    return `${sharedTemplate}
+Once the release is ready, merge this branch and I'll do the rest of jobs.
+
+${template}`
+}
+
+function getSharedPRTemplate(context: number) {
+    return `close #${context}
+
+**DO NOT** push any commits to the \`released\` branch, any change on that branch will lost.
+`
+}
+
+function getDefaultPRTemplate(nextVersion: string, templatePath: string): string | PromiseLike<string> {
+    return `This is the release PR for ${nextVersion}. To set a default template for the release PR, create a file "${templatePath}". You can use $version to infer the new version.`
 }
 
 function getReleaseTitle(version: Semver, currentVersion: string, nextVersion: string) {
     switch (version) {
         case 'major':
         case 'minor':
-            return `[Release] New release ${nextVersion}`
+            return `[Release] New release ${nextVersion} (${version})`
         case 'patch':
-            return `[Release] Hotfix ${currentVersion} => ${nextVersion}`
+            return `[Release] Hotfix ${currentVersion} => ${nextVersion} (${version})`
     }
 }
 function versionUpgrade(old: string, newV: string) {

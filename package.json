@@ -37,6 +37,7 @@
     "nock": "^13.0.5",
     "nodemon": "^2.0.6",
     "serverless": "^2.15.0",
+    "serverless-dotenv-plugin": "^3.1.0",
     "smee-client": "^1.2.2",
     "standard": "^16.0.3",
     "ts-jest": "^26.4.4",
