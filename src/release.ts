@@ -25,9 +25,9 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
     const issue = context.issue()
     const repo = context.repo()
     // Add a 🚀 for the issue
-    context.github.reactions.createForIssue({ ...issue, content: 'rocket' })
+    context.octokit.reactions.createForIssue({ ...issue, content: 'rocket' })
     // Rename the issue title
-    context.github.issues.update({ ...issue, title: releaseTitle, assignees: [] })
+    context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [] })
     // Leave a comment
     const updateComment = createLiveComment(context, `⚙Handling... Please wait a second`)
     // Step 2. Create a new branch
@@ -59,7 +59,7 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
 **DO NOT** push any commits to the \`released\` branch, any change on that branch will lost.
 `
     if (version === 'major' || version === 'minor') {
-        const pr = await context.github.pulls.create({
+        const pr = await context.octokit.pulls.create({
             ...repo,
             base: 'master',
             head: newBranch,
@@ -83,7 +83,7 @@ There is [another PR]($link) point to the master branch to make sure patches are
 
 ${template}`
         // Create 2 PR. hotfix/version => released, hotfix/version => master
-        const pr1 = await context.github.pulls.create({
+        const pr1 = await context.octokit.pulls.create({
             ...repo,
             base: 'released',
             head: newBranch,
@@ -92,7 +92,7 @@ ${template}`
             maintainer_can_modify: true,
             draft: true,
         })
-        const pr2 = await context.github.pulls.create({
+        const pr2 = await context.octokit.pulls.create({
             ...repo,
             base: 'master',
             head: newBranch,
@@ -104,7 +104,7 @@ When the ${pr1.data.html_url} merged, I'll try to merge this automatically but t
 Once there're merge conflict, you must resolve it manually.`,
         })
         await Promise.all([
-            context.github.pulls.update({
+            context.octokit.pulls.update({
                 ...repo,
                 pull_number: pr1.data.number,
                 body: pr1body.replace('$link', pr2.data.html_url),

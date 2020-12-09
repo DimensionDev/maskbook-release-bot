@@ -19,7 +19,7 @@ export async function hotfix(context: Context<Webhooks.EventPayloads.WebhookPayl
         await gitTagCommit(context, head.sha, `v${version.string}`)
         await forcePush(context, head.sha, 'released')
 
-        const relatedPR = await context.github.pulls
+        const relatedPR = await context.octokit.pulls
             .list({
                 ...context.repo(),
                 state: 'open',
@@ -27,7 +27,7 @@ export async function hotfix(context: Context<Webhooks.EventPayloads.WebhookPayl
                 base: 'master',
             })
             .then((x) => x.data.filter((x) => x.title.includes(`2 of 2`))[0])
-            .then((x) => context.github.pulls.get({ ...context.repo(), number: x.number }))
+            .then((x) => context.octokit.pulls.get({ ...context.repo(), number: x.number }))
             .then((x) => x.data)
 
         if (!relatedPR) {
