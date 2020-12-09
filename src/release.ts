@@ -1,5 +1,13 @@
 import { Context } from 'probot'
-import { fetchFile, semver, checkoutNewBranch, createCommitWithFileChanges, Changes, createLiveComment } from './utils'
+import {
+    fetchFile,
+    semver,
+    checkoutNewBranch,
+    createCommitWithFileChanges,
+    Changes,
+    createLiveComment,
+    branchExists,
+} from './utils'
 import Webhooks from '@octokit/webhooks'
 type Semver = 'major' | 'minor' | 'patch'
 
@@ -27,14 +35,22 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
     // Add a 🚀 for the issue
     context.octokit.reactions.createForIssue({ ...issue, content: 'rocket' })
     // Rename the issue title
-    context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [] })
+    context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [], labels: ['Release'] })
     // Leave a comment
     const updateComment = createLiveComment(context, `⚙ I'm preparing a new version...`)
+    let lastSuccessStage = 'before checkout new branch'
     try {
         // Step 2. Create a new branch
         const newBranch = (version === 'patch' ? 'hotfix/' : 'release/') + nextVersion
         const baseBranch = version === 'patch' ? 'released' : 'master'
+        if (await branchExists(context, newBranch)) {
+            updateComment(
+                `⚠ The branch used to release ${newBranch} already exists. I cannot create a new PR for you, sorry.`,
+            )
+            context.octokit.issues.update({ ...issue, state: 'closed' })
+        }
         const branch = await checkoutNewBranch(context, baseBranch, newBranch)
+        lastSuccessStage = 'after checkout new branch'
         // Step 3. Create a new Git tree, do some file changes in it, commit it to the new branch.
         const upgrade = versionUpgrade(manifest.version, nextVersion)
         const changes: Changes = new Map()
@@ -45,6 +61,7 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
             changes,
             `chore: bump version from ${manifest.version} to ${nextVersion}`,
         )
+        lastSuccessStage = 'after commit version upgrading'
         // Step 4. Open a PR for it
         const templatePath1 = '.github/RELEASE-TEMPLATE.md'
         const templatePath2 = '.github/HOTFIX-TEMPLATE.md'
@@ -54,6 +71,7 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
             () =>
                 `This is the release PR for ${nextVersion}. To set a default template for the release PR, create a file "${templatePath}". You can use $version to infer the new version.`,
         )
+        lastSuccessStage = 'after fetch template'
         const PRTitle = `${getReleaseTitle(version, manifest.version, nextVersion)} (${version})`
         const sharedTemplate = `close #${context.payload.issue.number}
 
@@ -71,6 +89,7 @@ Once the release is ready, merge this branch and I'll do the rest of jobs.
 ${template}`,
                 maintainer_can_modify: true,
             })
+            lastSuccessStage = 'after PR created'
             await updateComment(
                 `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr.data.html_url}). Please test it, feel free to add new patches.`,
             )
@@ -93,6 +112,7 @@ ${template}`
                 maintainer_can_modify: true,
                 draft: true,
             })
+            lastSuccessStage = 'after PR 1 created'
             const pr2 = await context.octokit.pulls.create({
                 ...repo,
                 base: 'master',
@@ -104,6 +124,7 @@ When the ${pr1.data.html_url} merged, I'll try to merge this automatically but t
 
 Once there're merge conflict, you must resolve it manually.`,
             })
+            lastSuccessStage = 'after PR 2 created'
             await Promise.all([
                 context.octokit.pulls.update({
                     ...repo,
@@ -116,12 +137,12 @@ Once there're merge conflict, you must resolve it manually.`,
             ])
         }
     } catch (e) {
-        updateComment(`❌ Error: ${e.message}
+        updateComment(`❌ ${e?.type}: ${e?.message}
 ${'```'}
-${e.stack}
+${e?.stack}
 ${'```'}
 
-@Jack-Works please fix me!
+@Jack-Works please fix me! The last successful stage was: ${lastSuccessStage}
 `)
     }
 }

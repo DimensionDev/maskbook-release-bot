@@ -35,6 +35,13 @@ export async function checkoutNewBranch(context: Context<any>, targetBranch: str
         sha: targetBranchLatestCommit.data.object.sha,
     })
 }
+export async function branchExists(context: Context<any>, branch: string) {
+    try {
+        return await queryBranchRef(context, branch)
+    } catch {
+        return false
+    }
+}
 function queryBranchRef(context: Context<any>, branch: string) {
     return context.octokit.git.getRef({ ...context.repo(), ref: 'heads/' + branch })
 }

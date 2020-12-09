@@ -3,7 +3,7 @@ import { release } from './release'
 import { createLiveComment, semver, gitTagCommit, forcePush, deleteBranch, createComment } from './utils'
 import { hotfix } from './hotfix'
 
-export = (app: Application) => {
+export = ({ app }: { app: Application }) => {
     app.on('*', async (context) => {
         Object.assign(globalThis, { context })
     })
@@ -19,6 +19,7 @@ export = (app: Application) => {
                 context,
                 `Hi, thanks for your interest on this project. This command is used to releasing a new version, and it is only available for the maintainers of this project.`,
             )
+            await context.octokit.issues.lock(context.issue())
             return
         }
         const version = RegExp.$1 // see line 13
