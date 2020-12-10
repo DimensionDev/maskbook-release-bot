@@ -87,6 +87,7 @@ function createMessage(progress: Status, count: number, all: number, message: st
     return text + '\n\n' + message
 }
 
+const labels = ['Release']
 /**
  * Workflow:
  *
@@ -120,7 +121,7 @@ export async function release_with_report(
     // Add a 🚀 for the issue
     context.octokit.reactions.createForIssue({ ...issue, content: 'rocket' })
     // Rename the issue title
-    context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [], labels: ['Release'] })
+    context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [], labels })
     //#endregion
 
     //#region Step 1. Fetch PR template
@@ -178,6 +179,7 @@ export async function release_with_report(
             body: getReleasePRTemplate(sharedTemplate, await template),
             maintainer_can_modify: true,
         })
+        context.octokit.issues.setLabels({ ...repo, issue_number: pr.data.id, labels })
         reportProgress(Status.CreatePR, 1, 1)
         await reportMessage(
             `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr.data.html_url}). Please test it, feel free to add new patches.`,
@@ -197,6 +199,7 @@ export async function release_with_report(
             draft: true,
         })
         reportProgress(Status.CreatePR, 1, 2)
+        context.octokit.issues.setLabels({ ...repo, issue_number: pr1.data.id, labels })
         const pr2 = await context.octokit.pulls.create({
             ...repo,
             base: 'master',
@@ -205,6 +208,7 @@ export async function release_with_report(
             body: getHotfixPR2Template(pr1.data.html_url),
         })
         reportProgress(Status.CreatePR, 2, 2)
+        context.octokit.issues.setLabels({ ...repo, issue_number: pr2.data.id, labels })
 
         const updatePR1 = context.octokit.pulls.update({
             ...repo,
