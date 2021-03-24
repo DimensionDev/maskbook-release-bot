@@ -27,6 +27,15 @@ export = ({ app }: { app: Application }) => {
             await release(context, version)
         }
     })
+    app.on('pull_request.opened', async (context) => {
+        if (context.payload.pull_request.base.ref === 'released' && !context.isBot) {
+            context.octokit.pulls.update({ ...context.pullRequest(), state: 'closed' })
+            await createComment(
+                context,
+                'Sorry, please do not open a pull request directly to the released branch. Doing so will cause the changes lost in the next release.',
+            )
+        }
+    })
     app.on('pull_request.closed', async (context) => {
         const pr = context.payload.pull_request
         if (!pr.merged) return
