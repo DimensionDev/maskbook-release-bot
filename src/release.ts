@@ -9,6 +9,8 @@ import {
     branchExists,
     deleteBranch,
     createComment,
+    addLabel,
+    LABEL_RELEASE,
 } from './utils'
 import Webhooks from '@octokit/webhooks'
 type Semver = 'major' | 'minor' | 'patch'
@@ -55,14 +57,15 @@ export async function release(context: Context<Webhooks.EventPayloads.WebhookPay
                 return lastPromise
             },
         )
-    } catch (e) {
-        lastMessage = `❌ ${e?.constructor?.name || 'Error'}: ${e?.message}
+    } catch (error) {
+        if (error instanceof Error) {
+            lastMessage = `❌ ${error.constructor.name || 'Error'}: ${error.message}
 ${'```'}
-${e?.stack}
+${error.stack}
 ${'```'}
 
-@Jack-Works please fix me!
-`
+@Jack-Works please fix me!`
+        }
     } finally {
         clearInterval(interval)
         await updateComment(createMessage(lastStatus, lastCount, lastAll, lastMessage))
@@ -104,9 +107,6 @@ export async function release_with_report(
     reportProgress: ReportFunction,
     reportMessage: (message: string) => Promise<void>,
 ) {
-    const issue = context.issue()
-    const repo = context.repo()
-
     //#region Step 0. Get the latest version on the GitHub.
     reportProgress(Status.BeforeGetLatestVersion)
     const { releaseTitle, nextVersion, currentVersion } = await (async () => {
@@ -118,9 +118,9 @@ export async function release_with_report(
         return { releaseTitle, nextVersion, currentVersion }
     })()
     // Add a 🚀 for the issue
-    context.octokit.reactions.createForIssue({ ...issue, content: 'rocket' })
+    context.octokit.reactions.createForIssue(context.issue({ content: 'rocket' }))
     // Rename the issue title
-    context.octokit.issues.update({ ...issue, title: releaseTitle, assignees: [], labels: ['Release'] })
+    context.octokit.issues.update(context.issue({ title: releaseTitle, assignees: [], labels: [LABEL_RELEASE] }))
     //#endregion
 
     //#region Step 1. Fetch PR template
@@ -170,14 +170,16 @@ export async function release_with_report(
     if (expectedSemver === 'major' || expectedSemver === 'minor') {
         //#region Step 6.a Create Release PR
         reportProgress(Status.CreatePR, 0, 1)
-        const pr = await context.octokit.pulls.create({
-            ...repo,
-            base: 'master',
-            head: newBranch,
-            title: PRTitle,
-            body: getReleasePRTemplate(sharedTemplate, await template),
-            maintainer_can_modify: true,
-        })
+        const pr = await context.octokit.pulls.create(
+            context.repo({
+                base: 'master',
+                head: newBranch,
+                title: PRTitle,
+                body: getReleasePRTemplate(sharedTemplate, await template),
+                maintainer_can_modify: true,
+            }),
+        )
+        await addLabel(context, pr.data.number, LABEL_RELEASE)
         reportProgress(Status.CreatePR, 1, 1)
         await reportMessage(
             `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr.data.html_url}). Please test it, feel free to add new patches.`,
@@ -187,30 +189,35 @@ export async function release_with_report(
         //#region Step 6.b Create hotfix PR
         const pr1body = getHotfixPR1Template(sharedTemplate, nextVersion, await template)
         reportProgress(Status.CreatePR, 0, 2)
-        const pr1 = await context.octokit.pulls.create({
-            ...repo,
-            base: 'released',
-            head: newBranch,
-            title: PRTitle + ' (1 of 2)',
-            body: pr1body,
-            maintainer_can_modify: true,
-            draft: true,
-        })
+        const pr1 = await context.octokit.pulls.create(
+            context.repo({
+                base: 'released',
+                head: newBranch,
+                title: PRTitle + ' (1 of 2)',
+                body: pr1body,
+                maintainer_can_modify: true,
+                draft: true,
+            }),
+        )
+        await addLabel(context, pr1.data.number, LABEL_RELEASE)
         reportProgress(Status.CreatePR, 1, 2)
-        const pr2 = await context.octokit.pulls.create({
-            ...repo,
-            base: 'master',
-            head: newBranch,
-            title: PRTitle + ' (2 of 2)',
-            body: getHotfixPR2Template(pr1.data.html_url),
-        })
+        const pr2 = await context.octokit.pulls.create(
+            context.repo({
+                base: 'master',
+                head: newBranch,
+                title: PRTitle + ' (2 of 2)',
+                body: getHotfixPR2Template(pr1.data.html_url),
+            }),
+        )
+        await addLabel(context, pr2.data.number, LABEL_RELEASE)
         reportProgress(Status.CreatePR, 2, 2)
 
-        const updatePR1 = context.octokit.pulls.update({
-            ...repo,
-            pull_number: pr1.data.number,
-            body: pr1body.replace('$link', pr2.data.html_url),
-        })
+        const updatePR1 = context.octokit.pulls.update(
+            context.repo({
+                pull_number: pr1.data.number,
+                body: pr1body.replace('$link', pr2.data.html_url),
+            }),
+        )
         const conclusion = reportMessage(
             `Hi @${context.payload.issue.user.login}! I have created [a PR for the next version ${nextVersion}](${pr1.data.html_url}) and there is [another PR to make sure patches are merged into the mainline](${pr2.data.html_url}).`,
         )
